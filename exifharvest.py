@@ -1,3 +1,7 @@
+# exifharvest 0.1
+# 16.02.2022
+# Stanislav Bogdanov
+
 from re import sub
 import pyexiv2
 import os
