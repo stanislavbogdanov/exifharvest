@@ -1,19 +1,24 @@
-# exifharvest 0.1
-# 16.02.2022
-# Stanislav Bogdanov
+# exifharvest 
+# by Stanislav Bogdanov
+#
+# Release 0.1
+# 21.02.2022 
 
+# Description:
+#   Collect EXIF for all images in selected folder and save dataset into CSV file. 
+#
 # Usage:
-# exifharvest.py [-drs] [walkdir] [reportfile]
+#   exifharvest.py [-drs] [walkdir] [reportfile]
 #
 # Keys:
-# -d    Deduplicate by shooting date and time.
-# -r    Priority for RAW formats, if deduplicate (-d key) is specified.
-# -s    Use short and simple list of EXIF fields.
-# -w    Overwrite the report file.
+#   -d    Deduplicate by shooting datetime.
+#   -r    Preserve RAW formats, if deduplicate (-d key) is specified.
+#   -s    Use short and simple list of EXIF fields.
+#   -w    Overwrite the report file.
 #
 # Args:
-# walkdir       Any existing folder with images or current directory by default.
-# reportfile    Name for output report file in CSV format. It's the basename of walkdir by default.
+#   walkdir       Any existing folder with images or current directory by default.
+#   reportfile    Name for output report file in CSV format. It defaults to basename of walkdir.
 
 import pyexiv2
 import os
@@ -23,6 +28,7 @@ import pandas as pd
 import numpy as np
 from pandas.api.types import is_numeric_dtype
 import re
+import csv
 
 # List of supported image formats
 supp_ext_list = ['jpeg', 'jpg', 'exv', 'cr2', 'crw', 'mrw', 'tiff', 'tif', 'webp', 'dng', 'nef', 'pef', 'arw', 'rw2', 'sr2', 'srw', 'orf', 'png', 'pgf', 'raf', 'eps', 'xmp', 'gif', 'psd', 'tga', 'bmp', 'jp2']
@@ -89,7 +95,7 @@ for p in range(len(sys.argv)):
             elif k == 'w': 
                 gargs['w'] = True
             else:
-                print("Unknown key", '"' + k + '" will be skipped.')
+                print('Unknown key', '"' + k + '" will be skipped.')
     else:
         if p == (len(sys.argv) - 1):
             if not walk_dir_specified:
@@ -105,14 +111,14 @@ for p in range(len(sys.argv)):
                     report_file_specified = True
                      
             elif not report_file_specified:
-                if sys.argv[p][-4:].lower() == '.csv':
+                if os.path.splitext(sys.argv[p])[1].lower() == '.csv':
                     report_file = os.path.abspath(sys.argv[p])
                 else:
                     report_file = os.path.abspath(sys.argv[p] + '.csv')
                 report_file_specified = True
 
             else:
-                print("Can't identify the argument", sys.argv[p])
+                print("Can't identify argument", sys.argv[p])
                 exit(0)
 
         elif p == (len(sys.argv) - 2):
@@ -125,14 +131,8 @@ for p in range(len(sys.argv)):
                 exit(0)
     
         else:
-            print("Can't identify the argument", sys.argv[p])
+            print("Can't identify argument", sys.argv[p])
             exit(0)
-
-# walk_dir = r'E:\\_Foto\\____2021\\Непал. Эверест\\100_1004'
-# gargs['d'] = True
-# gargs['r'] = True
-# gargs['s'] = True
-print(gargs)
 
 if not walk_dir_specified:
     print('Walkdir:', walk_dir)
@@ -165,16 +165,17 @@ for full_name in tqdm(walkdir(walk_dir), total=filecounter, unit="files"):
             data = img.read_exif()
             if len(data) > 0:
                 exif = pd.Series(data=data)
-                filename = os.path.split(full_name)[1]
+                filefolder, filename = os.path.split(full_name)
 
                 if gargs['s']:
-                    # Use short and simple list of EXIF fields.
+                    # Restict EXIF fields
                     exif = exif.reindex(index=short_field_list)
 
                 if exif.isnull().all(): 
                     err_count += 1
                     continue
-                exif = exif.reindex(index=['Filename', 'Filetype'] + exif.index.to_list())
+                exif = exif.reindex(index=['Folder', 'Filename', 'Filetype'] + exif.index.to_list())
+                exif['Folder'] = filefolder
                 exif['Filename'] = filename
                 exif['Filetype'] = os.path.splitext(filename)[1][1:].lower()
                 exif_list.append(exif.to_frame().T)
@@ -193,40 +194,38 @@ df = df.apply(lambda x: x.str.strip(), axis=0)
 
 # Datetime parsing
 df['Exif.Photo.DateTimeOriginal'] = pd.to_datetime(df['Exif.Photo.DateTimeOriginal'], format='%Y:%m:%d %H:%M:%S', errors='coerce')
-# df = df.dropna(subset=['Exif.Photo.DateTimeOriginal'])
 
 # Drop duplicates 
 if gargs['d']:
     before_ddup_len = df.shape[0]
+    d1 = df[df['Exif.Photo.DateTimeOriginal'].isnull()].copy()
+    d2 = df[~df['Exif.Photo.DateTimeOriginal'].isnull()].copy()
     if gargs['r']:
-        df['raw'] = df['Filetype'].isin(raw_ext_list).fillna(False).astype(int)
-        df = df.sort_values(['Exif.Photo.DateTimeOriginal', 'raw'])
-        df = df.drop(columns='raw')
+        d2['raw'] = d2['Filetype'].isin(raw_ext_list).fillna(False).astype(int)
+        d2 = d2.sort_values(['Exif.Photo.DateTimeOriginal', 'raw'])
+        d2 = d2.drop(columns='raw')
     else:
-        df = df.sort_values('Exif.Photo.DateTimeOriginal')
-    df = df.drop_duplicates(subset=['Exif.Photo.DateTimeOriginal'], keep='last')
+        d2 = d2.sort_values('Exif.Photo.DateTimeOriginal')
+    d2 = d2.drop_duplicates(subset=['Exif.Photo.DateTimeOriginal'], keep='last')
+    df = pd.concat([d1, d2], axis=0)
     print('Drop duplicates:', before_ddup_len - df.shape[0])
+
+# Data cleaning
+df['Horizontal'] = df['Exif.Image.Orientation'].isin(list('1234')).astype(int)
+df['Exif.Photo.FocalLength'] = df['Exif.Photo.FocalLength'].apply(eval_expr)
+df['ExposureTimeN'] = df['Exif.Photo.ExposureTime'].apply(eval_expr)
+df['Exif.Photo.FNumber'] = df['Exif.Photo.FNumber'].apply(eval_expr)
+df['ExposureBiasValueN'] = df['Exif.Photo.ExposureBiasValue'].apply(eval_expr)
+df['Exif.Photo.ISOSpeedRatings'] = df['Exif.Photo.ISOSpeedRatings'].apply(eval_expr)
+df['Exif.Photo.MeteringMode'] = df['Exif.Photo.MeteringMode'].apply(eval_expr)
+df['Exif.Photo.Flash'] = df['Exif.Photo.Flash'].apply(eval_expr)
+df['Exif.Photo.ExposureProgram'] = df['Exif.Photo.ExposureProgram'].apply(eval_expr)
 
 # Simple names for short filds list
 if gargs['s']:
     df.columns = df.columns.to_series().astype(str).str.replace(r'Exif\.(Photo|Image)\.', '', regex=True)
 
-# df.insert(3, 'Horizontal', df['Orientation'].isin(list('1234')).astype(int))
-# df['FocalLength'] = df['FocalLength'].apply(eval_expr)
-# df.insert(6, 'ExposureTimeDN', (1.0 / df['ExposureTime'].apply(eval_expr)).round(0))
-# df['FNumber'] = df['FNumber'].apply(eval_expr)
-# df.insert(10, 'ExposureBiasValueN', df['ExposureBiasValue'].apply(eval_expr))
-
-# df['ISOSpeedRatings'] = df['ISOSpeedRatings'].apply(eval_expr)
-# df['MeteringMode'] = df['MeteringMode'].apply(eval_expr)
-# df['Flash'] = df['Flash'].apply(eval_expr)
-# df['ExposureProgram'] = df['ExposureProgram'].apply(eval_expr)
-
-# print(df)
-# print()
-# print(df.info())
-
-df.to_csv(report_file, sep=';', index=False)
+df.to_csv(report_file, sep='\t', index=False)
 
 print('Harvested images:', df.shape[0])
 print('Errors:', err_count)
