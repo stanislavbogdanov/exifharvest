@@ -20,15 +20,12 @@
 #   walkdir       Any existing folder with images or current directory by default.
 #   reportfile    Name for output report file in CSV format. It defaults to basename of walkdir.
 
-import pyexiv2
 import os
 import sys
+import pyexiv2
 from tqdm import tqdm
 import pandas as pd
-import numpy as np
 from pandas.api.types import is_numeric_dtype
-import re
-import csv
 
 # List of supported image formats
 supp_ext_list = ['jpeg', 'jpg', 'exv', 'cr2', 'crw', 'mrw', 'tiff', 'tif', 'webp', 'dng', 'nef', 'pef', 'arw', 'rw2', 'sr2', 'srw', 'orf', 'png', 'pgf', 'raf', 'eps', 'xmp', 'gif', 'psd', 'tga', 'bmp', 'jp2']
