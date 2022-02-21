@@ -34,10 +34,7 @@ raw_ext_list = ['cr2', 'crw', 'mrw', 'dng', 'nef', 'pef', 'arw', 'rw2', 'sr2', '
 pyexiv2.set_log_level(4)
 
 # Short list of EXIF fields
-short_field_list = set([
-    'Exif.Image.Orientation',
-    'Exif.Image.Make',
-    'Exif.Image.Model',
+short_field_list = [
     'Exif.Photo.DateTimeOriginal',
     'Exif.Photo.FocalLength',
     'Exif.Photo.ExposureTime',
@@ -46,8 +43,11 @@ short_field_list = set([
     'Exif.Photo.ExposureBiasValue',
     'Exif.Photo.MeteringMode',
     'Exif.Photo.Flash',
-    'Exif.Photo.ExposureProgram'
-])
+    'Exif.Photo.ExposureProgram',
+    'Exif.Image.Orientation',
+    'Exif.Image.Make',
+    'Exif.Image.Model'
+]
 
 def eval_expr(x):
     """Evaluate symbolic expression"""
@@ -128,6 +128,12 @@ for p in range(len(sys.argv)):
             print("Can't identify the argument", sys.argv[p])
             exit(0)
 
+# walk_dir = r'E:\\_Foto\\____2021\\Непал. Эверест\\100_1004'
+# gargs['d'] = True
+# gargs['r'] = True
+# gargs['s'] = True
+print(gargs)
+
 if not walk_dir_specified:
     print('Walkdir:', walk_dir)
 
@@ -148,7 +154,7 @@ if not report_file_specified:
 
 print('Report file:', report_file)
 if os.path.isfile(report_file) and not gargs['w']:
-    print("Can't overwrite the report file. Delete it at first or use key -w.")
+    print("Report file exists. Delete it first, or use key -w to allow overwriting.")
     exit(0)
 
 err_count = 0
@@ -164,7 +170,6 @@ for full_name in tqdm(walkdir(walk_dir), total=filecounter, unit="files"):
                 if gargs['s']:
                     # Use short and simple list of EXIF fields.
                     exif = exif.reindex(index=short_field_list)
-                    # print('simple!')
 
                 if exif.isnull().all(): 
                     err_count += 1
@@ -182,35 +187,29 @@ if len(exif_list) == 0:
     exit(0)
 
 df = pd.concat(exif_list, axis=0, ignore_index=True)
-print(df.info())
 
 # Trim the strings
 df = df.apply(lambda x: x.str.strip(), axis=0)
 
-# # Очистить от дублей (по времени съемки), RAW имеет приоритет
-# df['Exif.Photo.DateTimeOriginal'] = pd.to_datetime(df['Exif.Photo.DateTimeOriginal'], format='%Y:%m:%d %H:%M:%S', errors='coerce')
+# Datetime parsing
+df['Exif.Photo.DateTimeOriginal'] = pd.to_datetime(df['Exif.Photo.DateTimeOriginal'], format='%Y:%m:%d %H:%M:%S', errors='coerce')
 # df = df.dropna(subset=['Exif.Photo.DateTimeOriginal'])
-# df = df.sort_values(['Exif.Photo.DateTimeOriginal', 'IsJPEG'])
-# df = df.drop_duplicates(subset=['Exif.Photo.DateTimeOriginal'], keep='first')
 
-# # Оставить нужные столбцы и переименовать их
-# df = df[[
-#     'Exif.Photo.DateTimeOriginal',
-#     'Filename',
-#     'Filetype',
-#     'Exif.Image.Orientation',
-#     'Exif.Photo.FocalLength',
-#     'Exif.Photo.ExposureTime',
-#     'Exif.Photo.FNumber',
-#     'Exif.Photo.ISOSpeedRatings',
-#     'Exif.Photo.ExposureBiasValue',
-#     'Exif.Photo.MeteringMode',
-#     'Exif.Photo.Flash',
-#     'Exif.Photo.ExposureProgram',
-#     'Exif.Image.Make',
-#     'Exif.Image.Model'
-# ]]
-# df.columns = df.columns.to_series().astype(str).str.replace(r'Exif\.(Photo|Image)\.', '', regex=True)
+# Drop duplicates 
+if gargs['d']:
+    before_ddup_len = df.shape[0]
+    if gargs['r']:
+        df['raw'] = df['Filetype'].isin(raw_ext_list).fillna(False).astype(int)
+        df = df.sort_values(['Exif.Photo.DateTimeOriginal', 'raw'])
+        df = df.drop(columns='raw')
+    else:
+        df = df.sort_values('Exif.Photo.DateTimeOriginal')
+    df = df.drop_duplicates(subset=['Exif.Photo.DateTimeOriginal'], keep='last')
+    print('Drop duplicates:', before_ddup_len - df.shape[0])
+
+# Simple names for short filds list
+if gargs['s']:
+    df.columns = df.columns.to_series().astype(str).str.replace(r'Exif\.(Photo|Image)\.', '', regex=True)
 
 # df.insert(3, 'Horizontal', df['Orientation'].isin(list('1234')).astype(int))
 # df['FocalLength'] = df['FocalLength'].apply(eval_expr)
