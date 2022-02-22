@@ -1,8 +1,8 @@
 # exifharvest 
 # by Stanislav Bogdanov
 #
-# Release 0.1
-# 21.02.2022 
+# Release 0.2
+# 22.02.2022 
 
 # Description:
 #   Collect EXIF for all images in selected folder and save dataset into CSV file. 
@@ -24,6 +24,7 @@ import os
 import sys
 import pyexiv2
 from tqdm import tqdm
+import numpy as np
 import pandas as pd
 from pandas.api.types import is_numeric_dtype
 
